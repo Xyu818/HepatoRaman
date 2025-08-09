@@ -1,0 +1,291 @@
+
+ install.packages("rms")
+ install.packages("readxl")
+ install.packages("pROC")
+ install.packages("MASS")
+ install.packages("shiny")
+
+library(rms)
+library(readxl)
+library(pROC)
+library(MASS)
+library(shiny)
+
+set.seed(2025)
+data_path <- "C:/Users/luosi/Desktop/Health_Cancer.xlsx"  # <— change to your data path
+outdir    <- "C:/Users/luosi/Desktop/HCC_nomogram_outputs"
+if (!dir.exists(outdir)) dir.create(outdir, recursive = TRUE)
+
+# If zeros in ratio columns represent "not detected/missing", set TRUE (applies to ratio columns only)
+zero_as_na <- FALSE
+
+# ================= Robust reading & column-name detection =================
+raw <- readxl::read_xlsx(data_path, col_names = TRUE)
+colnames(raw) <- trimws(colnames(raw))
+
+nm       <- colnames(raw)
+nm_clean <- tolower(gsub("[^[:alnum:]]+", "", nm))
+
+age_keys   <- c("age", "ageyears", "nianling", "年龄")
+label_keys <- c("label", "y", "outcome", "status", "hcc", "class", "group")
+
+age_idx   <- which(nm_clean %in% age_keys)
+label_idx <- which(nm_clean %in% label_keys)
+if (length(age_idx) == 0 || length(label_idx) == 0) {
+  stop("Could not find Age or label column; current names:\n", paste(nm, collapse = ", "))
+}
+colnames(raw)[age_idx[1]]   <- "Age"
+colnames(raw)[label_idx[1]] <- "label"
+
+# Make other names valid R names (e.g., 500/720 -> X500.720); keep Age/label unchanged
+keep_names <- colnames(raw)
+keep_names[keep_names == "Age"]   <- "Age"
+keep_names[keep_names == "label"] <- "label"
+tmp_names <- make.names(keep_names)
+tmp_names[which(keep_names == "Age")]   <- "Age"
+tmp_names[which(keep_names == "label")] <- "label"
+colnames(raw) <- tmp_names
+
+# ================= Select variables: drop ID, keep Age + ratio columns + label =================
+id_cols    <- grep("^ID$", colnames(raw), ignore.case = TRUE, value = TRUE)
+ratio_cols <- setdiff(colnames(raw), c(id_cols, "Age", "label"))
+df <- raw[, c("Age", ratio_cols, "label")]
+
+# 1 = HCC (positive), 0 = normal
+df$label <- factor(df$label, levels = c(0, 1))
+
+# —— forcibly remove sex/gender ——
+drop_keys <- c("gender","sex","xingbie","性别")
+nm2       <- tolower(gsub("[^[:alnum:]]+","", names(df)))
+drop_cols <- names(df)[nm2 %in% drop_keys]
+if (length(drop_cols)) {
+  df[drop_cols] <- NULL
+  message("Removed variables: ", paste(drop_cols, collapse = ", "))
+}
+ratio_cols <- setdiff(names(df), c("Age", "label"))
+
+# ================= Convert ratio columns to numeric =================
+to_num <- function(x) { if (is.numeric(x)) x else suppressWarnings(as.numeric(as.character(x))) }
+df[, ratio_cols] <- lapply(df[, ratio_cols, drop = FALSE], to_num)
+
+if (zero_as_na) {
+  rmat <- as.matrix(df[, ratio_cols])
+  rmat[rmat == 0] <- NA
+  df[, ratio_cols] <- as.data.frame(rmat)
+}
+
+N  <- nrow(df)
+E1 <- sum(df$label == 1, na.rm = TRUE)
+E0 <- sum(df$label == 0, na.rm = TRUE)
+message(sprintf("Sample size N=%d, HCC(1)=%d, Controls(0)=%d", N, E1, E0))
+
+# ================= Univariate screening by LRT =================
+vars   <- setdiff(colnames(df), "label")
+p_keep <- list()
+for (v in vars) {
+  subdf <- na.omit(df[, c("label", v)])
+  if (nrow(subdf) < 10 || length(unique(subdf$label)) < 2) next
+  f1 <- as.formula(paste("label ~", v))
+  m1 <- glm(f1, data = subdf, family = binomial)
+  pLRT <- tryCatch(anova(m1, test = "LRT")$`Pr(>Chi)`[2], error = function(e) NA_real_)
+  p_keep[[v]] <- pLRT
+}
+p_tbl <- data.frame(var = names(p_keep), p_LRT = unlist(p_keep))
+p_tbl <- p_tbl[order(p_tbl$p_LRT), ]
+write.csv(p_tbl, file.path(outdir, "univariate_LRT_pvalues.csv"), row.names = FALSE)
+
+# ================= Events-per-parameter constraint (avoid overfitting) =================
+E   <- min(E1, E0)
+EPP <- 10                                   # consider 12–15 for stricter control
+max_params <- max(1, floor(E / EPP))
+message(sprintf("With EPP=%d, allow at most %d parameters", EPP, max_params))
+
+cand <- subset(p_tbl, !is.na(p_LRT) & p_LRT <= 0.15)
+if (nrow(cand) == 0) stop("No univariate p<=0.15; relax the threshold or use penalized regression.")
+sel  <- head(cand$var, max_params)
+if (!"Age" %in% sel) { if (length(sel) < max_params) sel <- unique(c("Age", sel)) else sel[1] <- "Age" }
+message("Variables entering multivariable: ", paste(sel, collapse = ", "))
+
+# ================= rms modeling, internal validation & calibration =================
+dd <- datadist(df); options(datadist = "dd")
+form_final <- as.formula(paste("label ~", paste(sel, collapse = " + ")))
+fit <- lrm(form_final, data = df, x = TRUE, y = TRUE)
+
+val <- rms::validate(fit, B = 1000)
+capture.output(val, file = file.path(outdir, "validate_results.txt"))
+print(val)
+
+cal <- rms::calibrate(fit, method = "boot", B = 1000)
+
+# Nomogram
+nom <- nomogram(fit, fun = plogis, fun.at = seq(0.05, 0.95, 0.10), funlabel = "Risk", lp = FALSE)
+pdf(file.path(outdir, "nomogram.pdf"), width = 9, height = 7); plot(nom, xfrac = 0.8); dev.off()
+png(file.path(outdir, "nomogram.png"), width = 1200, height = 900, res = 150); plot(nom, xfrac = 0.8); dev.off()
+
+# ================= Predicted probability & ROC (direction fixed) =================
+prob <- as.numeric(predict(fit, type = "fitted"))
+roc_obj   <- roc(response = df$label, predictor = prob, levels = c(0, 1), direction = "<")
+auc_value <- auc(roc_obj); ci_auc <- ci.auc(roc_obj)
+cat(sprintf("AUC = %.4f | 95%% CI: [%.4f, %.4f]\n", as.numeric(auc_value), as.numeric(ci_auc[1]), as.numeric(ci_auc[3])))
+
+png(file.path(outdir, "roc_curve.png"), width = 1200, height = 900, res = 150)
+plot(roc_obj, lwd = 2, main = "ROC Curve"); dev.off()
+
+write.csv(data.frame(FPR = 1 - roc_obj$specificities,
+                     TPR = roc_obj$sensitivities,
+                     Thresholds = roc_obj$thresholds),
+          file.path(outdir, "roc_curve_data.csv"), row.names = FALSE)
+
+# ================= Export calibration data (deciles) =================
+png(file.path(outdir, "calibration_curve.png"), width = 1200, height = 900, res = 150)
+plot(cal); dev.off()
+
+y_num <- as.numeric(as.character(df$label))
+qs <- quantile(prob, probs = seq(0, 1, length.out = 11), na.rm = TRUE)
+bin <- cut(prob, breaks = qs, include.lowest = TRUE, labels = FALSE)
+mean_pred <- tapply(prob, bin, mean)
+mean_obs  <- tapply(y_num, bin, mean)
+write.csv(data.frame(Bin = 1:10,
+                     Mean_Predicted = as.numeric(mean_pred),
+                     Mean_Observed  = as.numeric(mean_obs)),
+          file.path(outdir, "calibration_curve_data.csv"), row.names = FALSE)
+
+# ================== Basic DCA (development prevalence) ==================
+thresholds <- seq(0.01, 0.99, by = 0.01)
+N <- length(y_num); prev <- mean(y_num)
+net_benefit_model <- sapply(thresholds, function(pt) {
+  pred <- as.integer(prob >= pt)
+  TP <- sum(pred == 1 & y_num == 1)
+  FP <- sum(pred == 1 & y_num == 0)
+  (TP / N) - (FP / N) * (pt / (1 - pt))
+})
+net_benefit_all  <- prev - (1 - prev) * (thresholds / (1 - thresholds))
+net_benefit_none <- rep(0, length(thresholds))
+write.csv(data.frame(Threshold = thresholds, Model = net_benefit_model,
+                     TreatAll = net_benefit_all, TreatNone = net_benefit_none),
+          file.path(outdir, "decision_curve_dev.csv"), row.names = FALSE)
+
+png(file.path(outdir, "decision_curve_dev.png"), width = 1200, height = 900, res = 150)
+plot(thresholds, net_benefit_model, type = "l", lwd = 2,
+     xlab = "Threshold probability", ylab = "Net benefit", main = "Decision Curve (development)")
+lines(thresholds, net_benefit_all,  lty = 2); abline(h = 0, lty = 3)
+legend("topright", legend = c("Model", "Treat All", "Treat None"),
+       lwd = c(2,1,1), lty = c(1,2,3))
+dev.off()
+
+# ================== Target-population DCA: recalibration + practical thresholds + y-axis scaling ==================
+# 1) helpers
+recalibrate_to_pi <- function(prob, pi_dev, pi_tar) {
+  plogis(qlogis(prob) + (qlogis(pi_tar) - qlogis(pi_dev)))
+}
+dca_from_prob <- function(prob, y, pi_tar, thresholds) {
+  se <- sapply(thresholds, function(pt) sum(prob >= pt & y == 1) / sum(y == 1))
+  sp <- sapply(thresholds, function(pt) sum(prob <  pt & y == 0) / sum(y == 0))
+  nb_model <- se*pi_tar - (1 - sp)*(1 - pi_tar)*(thresholds/(1 - thresholds))
+  nb_all   <- pi_tar      - (1 - pi_tar)*(thresholds/(1 - thresholds))
+  data.frame(Threshold = thresholds, Model = nb_model, TreatAll = nb_all, TreatNone = 0)
+}
+pretty_thresholds <- function(who = c("cirrhosis","checkup")) {
+  who <- match.arg(who)
+  if (who == "cirrhosis") seq(0.01, 0.30, by = 0.005) else seq(0.0001, 0.01, by = 0.0001)
+}
+y_scale <- function(who) if (who=="cirrhosis") 100 else 1000  # per 100 or per 1000 patients
+
+# 2) target prevalences (replace by your local numbers if available)
+pi_targets <- c(cirrhosis_clinic = 0.03,   # HBV-cirrhosis surveillance clinic ~3%/year
+                checkup_general  = 0.0002) # general check-up ~0.02%/year
+pi_dev <- mean(y_num)
+
+# 3) generate curves/tables by population
+for (nm in names(pi_targets)) {
+  who   <- if (nm=="cirrhosis_clinic") "cirrhosis" else "checkup"
+  pi_tar <- pi_targets[[nm]]
+  thr    <- pretty_thresholds(who)
+  prob_adj <- recalibrate_to_pi(prob, pi_dev, pi_tar)   # intercept update
+  
+  dca_df <- dca_from_prob(prob_adj, y_num, pi_tar, thresholds = thr)
+  scale_fac <- y_scale(who)  # per 100/1000
+  dca_df_scaled <- transform(dca_df, Model = Model*scale_fac,
+                             TreatAll = TreatAll*scale_fac,
+                             TreatNone = TreatNone*scale_fac)
+  
+  write.csv(dca_df_scaled, file.path(outdir, paste0("decision_curve_", nm, "_scaled.csv")), row.names = FALSE)
+  
+  png(file.path(outdir, paste0("decision_curve_", nm, "_scaled.png")), width = 1200, height = 900, res = 150)
+  plot(dca_df_scaled$Threshold, dca_df_scaled$Model, type = "l", lwd = 2,
+       xlab = "Threshold probability",
+       ylab = paste0("Net benefit (per ", scale_fac, " patients)"),
+       main = paste0("Decision Curve (", nm, ", pi=", signif(pi_tar,3), ")"))
+  lines(dca_df_scaled$Threshold, dca_df_scaled$TreatAll,  lty = 2)
+  abline(h = 0, lty = 3)
+  legend("topright", legend = c("Model", "Treat All", "Treat None"),
+         lwd = c(2,1,1), lty = c(1,2,3))
+  dev.off()
+  
+  # Se/Sp/PPV/NPV at common thresholds
+  thr_grid <- if (who=="cirrhosis") c(0.05, 0.10, 0.20, 0.30) else c(0.001, 0.002, 0.005, 0.01)
+  se <- sapply(thr_grid, function(pt) sum(prob_adj >= pt & y_num == 1) / sum(y_num == 1))
+  sp <- sapply(thr_grid, function(pt) sum(prob_adj <  pt & y_num == 0) / sum(y_num == 0))
+  ppv <- (se*pi_tar) / (se*pi_tar + (1-sp)*(1-pi_tar))
+  npv <- (sp*(1-pi_tar)) / (sp*(1-pi_tar) + (1-se)*pi_tar)
+  out <- data.frame(Threshold = thr_grid, Sensitivity = se, Specificity = sp,
+                    PPV = ppv, NPV = npv, BaselineRisk = pi_tar)
+  write.csv(out, file.path(outdir, paste0("ppv_npv_", nm, ".csv")), row.names = FALSE)
+}
+
+# ================= Shiny calculator (numeric predictors only) =================
+app_dir <- file.path(outdir, "HCC_nomogram_app")
+if (!dir.exists(app_dir)) dir.create(app_dir, recursive = TRUE)
+
+numeric_predictors <- sel[sapply(sel, function(v) is.numeric(df[[v]]))]
+predictors <- numeric_predictors
+
+saveRDS(fit, file.path(app_dir, "fit.rds"))
+saveRDS(dd,  file.path(app_dir, "dd.rds"))
+saveRDS(predictors, file.path(app_dir, "predictors.rds"))
+
+defaults <- if (length(predictors)) sapply(predictors, function(v) median(df[[v]], na.rm = TRUE)) else numeric(0)
+if (length(predictors)) names(defaults) <- predictors
+saveRDS(defaults, file.path(app_dir, "defaults.rds"))
+
+pretty_name <- function(x) { x <- gsub("^X","",x); gsub("\\.", "/", x) }
+app_code <- '
+library(shiny); library(rms)
+fit <- readRDS("fit.rds"); dd <- readRDS("dd.rds"); options(datadist="dd")
+predictors <- readRDS("predictors.rds"); defaults <- readRDS("defaults.rds")
+pretty_name <- function(x) { x <- gsub("^X","",x); gsub("\\\\.", "/", x) }
+
+ui <- fluidPage(
+  titlePanel("HCC Risk Calculator (Nomogram model)"),
+  sidebarLayout(
+    sidebarPanel(uiOutput("dyn_inputs"), actionButton("calc", "Compute risk", class="btn-primary")),
+    mainPanel(h4("Prediction"), verbatimTextOutput("risk_out"))
+  )
+)
+
+server <- function(input, output, session) {
+  output$dyn_inputs <- renderUI({
+    if (!length(predictors)) return(helpText("The current model contains no numeric input variables."))
+    do.call(tagList, lapply(predictors, function(v) {
+      numericInput(v, pretty_name(v), value = if (!is.null(defaults[[v]]) && is.finite(defaults[[v]])) defaults[[v]] else NA_real_, step = 0.001)
+    }))
+  })
+  observeEvent(input$calc, {
+    if (!length(predictors)) { output$risk_out <- renderText("No numeric predictors available."); return() }
+    newx <- as.data.frame(t(sapply(predictors, function(v) input[[v]]))); colnames(newx) <- predictors
+    pr <- as.numeric(predict(fit, newdata = newx, type = "fitted"))
+    output$risk_out <- renderText(sprintf("Predicted probability: %.4f", pr))
+  })
+}
+shinyApp(ui, server)
+'
+cat(app_code, file = file.path(app_dir, "app.R"))
+
+# ================= Export coefficients / selected variables =================
+coefs <- as.data.frame(coef(fit)); colnames(coefs) <- "Coefficient"
+write.csv(coefs, file.path(outdir, "final_model_coefficients.csv"), row.names = TRUE)
+writeLines(paste(sel, collapse = ","), con = file.path(outdir, "final_vars.txt"))
+
+cat("All done. Output directory: ", outdir, "\n")
+cat("Shiny app directory: ", app_dir, "\n")
+cat("Run with: shiny::runApp('", app_dir, "')\n", sep = "")
