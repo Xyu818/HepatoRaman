@@ -10,9 +10,7 @@ from sklearn.metrics import (classification_report, confusion_matrix,
                              ConfusionMatrixDisplay, roc_curve, auc)
 from sklearn.manifold import TSNE
 
-# =================================================================
-# Data Loading & Preprocessing
-# =================================================================
+
 data1 = pd.read_excel('glycoprotein.xlsx')
 data2 = pd.read_excel('AFP.xlsx')
 
@@ -28,16 +26,12 @@ for i in range(1, data2.shape[1]):
 X = np.array(X)
 y = np.array(y)
 
-# =================================================================
-# Train-Test Split
-# =================================================================
+
 X_train, X_test, y_train, y_test = train_test_split(
     X, y, test_size=0.2, random_state=42, stratify=y
 )
 
-# =================================================================
-# Pipeline & Cross-Validation
-# =================================================================
+
 pipeline = Pipeline([
     ('lgbm', LGBMClassifier(random_state=42, verbosity=-1))
 ])
@@ -64,10 +58,7 @@ print(classification_report(y_test, y_pred))
 
 joblib.dump(best_model, 'optimized_lgbm_model.pkl')
 
-# =================================================================
-# Visualizations (保持与之前相同的可视化函数)
-# =================================================================
-# 1. 混淆矩阵
+
 def plot_confusion_matrix(y_true, y_pred):
     cm = confusion_matrix(y_true, y_pred)
     disp = ConfusionMatrixDisplay(confusion_matrix=cm, display_labels=["Glycoprotein", "AFP"])
@@ -77,7 +68,7 @@ def plot_confusion_matrix(y_true, y_pred):
 
 plot_confusion_matrix(y_test, y_pred)
 
-# 2. t-SNE可视化
+
 def plot_tsne(X, y, title="t-SNE Visualization"):
     tsne = TSNE(n_components=2, random_state=42, perplexity=30)
     X_tsne = tsne.fit_transform(X)
@@ -92,7 +83,7 @@ def plot_tsne(X, y, title="t-SNE Visualization"):
 
 plot_tsne(X_train, y_train, title="Training Set t-SNE")
 
-# 3. 特征重要性
+
 def plot_feature_importance(model, num_features=20):
     importances = model.named_steps['lgbm'].feature_importances_
     sorted_idx = np.argsort(importances)[::-1]
@@ -110,7 +101,7 @@ def plot_feature_importance(model, num_features=20):
 
 plot_feature_importance(best_model)
 
-# 4. ROC曲线
+
 def plot_roc_curve(y_true, y_prob):
     fpr, tpr, _ = roc_curve(y_true, y_prob)
     roc_auc = auc(fpr, tpr)
@@ -130,7 +121,7 @@ def plot_roc_curve(y_true, y_prob):
 y_prob = best_model.predict_proba(X_test)[:, 1]
 plot_roc_curve(y_test, y_prob)
 
-# 5. 学习曲线
+
 def plot_learning_curve(estimator, X, y):
     train_sizes, train_scores, test_scores = learning_curve(
         estimator, X, y, cv=5, n_jobs=-1,
@@ -157,3 +148,4 @@ def plot_learning_curve(estimator, X, y):
     plt.show()
 
 plot_learning_curve(best_model, X_train, y_train)
+
