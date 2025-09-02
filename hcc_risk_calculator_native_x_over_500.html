@@ -1,0 +1,381 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>HCC Risk & Decision Aid (Raman + Age)</title>
+<meta name="description" content="Predict HCC risk from Raman peak ratios and age, with threshold-based recommendation, shrinkage, and prevalence recalibration." />
+<style>
+  :root {
+    --bg1:#f8fafc; --bg2:#ffffff;
+    --card:#ffffff; --ink:#0f172a; --muted:#64748b;
+    --accent:#2563eb; --ok:#059669; --warn:#dc2626;
+    --line:#e5e7eb;
+  }
+  html,body{margin:0;padding:0;background:linear-gradient(180deg,var(--bg1),var(--bg2));color:var(--ink);
+    font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji";}
+  .container{max-width:1100px;margin:0 auto;padding:0 20px;}
+  .header{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.85);backdrop-filter: blur(6px);
+    border-bottom:1px solid rgba(226,232,240,.7);}
+  .header-inner{display:flex;align-items:center;justify-content:space-between;padding:12px 0;}
+  .brand{display:flex;align-items:center;gap:10px;font-weight:700;color:#0b1220}
+  .logo{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:12px;background:var(--accent);color:#fff}
+  .subtle{font-size:12px;color:#64748b}
+
+  .main{padding:28px 0 40px;display:grid;gap:20px}
+  .card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 28px rgba(15,23,42,.06)}
+  .card-body{padding:20px}
+  h1{font-size:22px;margin:0 0 6px}
+  h2{font-size:18px;margin:0}
+  p{margin:0}
+
+  .grid-2{display:grid;gap:16px}
+  @media(min-width:900px){ .grid-2{grid-template-columns:1fr 1fr} }
+
+  .input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:12px;font-size:14px}
+  .input:focus{outline:none;border-color:#bfdbfe;box-shadow:0 0 0 3px rgba(59,130,246,.25)}
+  .label{font-size:14px;color:#0b1220;margin-bottom:6px;display:block}
+  .muted{color:#64748b}
+  .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+  .kpi .item{background:#f8fafc;border-radius:12px;padding:12px 14px}
+  .kpi .k{font-size:12px;color:#64748b}
+  .kpi .v{font-size:28px;font-weight:800;color:#0b1220}
+  .recommend{border-radius:14px;padding:14px;font-weight:700}
+  .recommend.ok{background:#ecfdf5;color:#065f46}
+  .recommend.warn{background:#fef2f2;color:#991b1b}
+
+  .pill{background:#f1f5f9;border-radius:12px;padding:10px 12px}
+  .row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
+  .btn{appearance:none;border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer}
+  .btn.primary{background:var(--accent);color:#fff}
+  .btn.ghost{background:#e2e8f0;color:#0f172a}
+
+  .footer{border-top:1px solid rgba(226,232,240,.7);background:#fff}
+  .footer-inner{display:flex;align-items:center;justify-content:space-between;padding:12px 0}
+
+  /* small helpers */
+  .mt-4{margin-top:16px} .mt-6{margin-top:24px} .mt-8{margin-top:32px} .mb-1{margin-bottom:4px}
+  .text-xs{font-size:12px} .text-sm{font-size:14px} .text-center{text-align:center} .bold{font-weight:700}
+  .info{display:flex;align-items:center;gap:8px;color:#64748b}
+  .icon{width:18px;height:18px;display:inline-block}
+</style>
+</head>
+<body>
+  <header class="header">
+    <div class="container header-inner">
+      <div class="brand">
+        <span class="logo" aria-hidden="true">
+          <svg viewBox="0 0 24 24" class="icon" fill="currentColor"><path d="M12 2l2.2 5.8L20 10l-5.8 2.2L12 18l-2.2-5.8L4 10l5.8-2.2L12 2z"/></svg>
+        </span>
+        HCC Risk & Decision Aid
+      </div>
+      <div class="subtle">Raman Peaks + Age · Logistic Model</div>
+    </div>
+  </header>
+
+  <main class="container main">
+    <section class="card">
+      <div class="card-body">
+        <h1>Predict risk from Raman peak ratios and age</h1>
+        <p class="subtle mt-1">Enter age and raw peak intensities (500, 650, 720, 1035 cm⁻¹). The tool computes ratios (<strong>650/500, 720/500, 1035/500</strong>) and outputs a predicted probability with a threshold-based recommendation. Advanced settings support uniform shrinkage and prevalence recalibration.</p>
+      </div>
+    </section>
+
+    <section class="grid-2">
+      <!-- Patient Inputs -->
+      <div class="card">
+        <div class="card-body">
+          <h2>Patient Inputs</h2>
+          <div class="mt-4 row">
+            <div>
+              <label class="label" for="age">Age (years)</label>
+              <input class="input" id="age" type="number" min="0" value="60" />
+            </div>
+            <div></div>
+
+            <div>
+              <label class="label" for="i500">Peak intensity 500 cm⁻¹</label>
+              <input class="input" id="i500" type="number" step="0.0001" min="0" value="1.00" />
+            </div>
+            <div>
+              <label class="label" for="i650">Peak intensity 650 cm⁻¹ <span class="subtle">(optional; needed if model uses <strong>650/500</strong>)</span></label>
+              <input class="input" id="i650" type="number" step="0.0001" min="0" placeholder="optional" />
+            </div>
+
+            <div>
+              <label class="label" for="i720">Peak intensity 720 cm⁻¹</label>
+              <input class="input" id="i720" type="number" step="0.0001" min="0" value="1.00" />
+            </div>
+            <div>
+              <label class="label" for="i1035">Peak intensity 1035 cm⁻¹</label>
+              <input class="input" id="i1035" type="number" step="0.0001" min="0" value="1.00" />
+            </div>
+          </div>
+
+          <div class="pill mt-4">
+            <div class="info"><svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M11 7h2v2h-2zM11 11h2v6h-2z"/><path d="M12 2a10 10 0 100 20 10 10 0 000-20zM4 12a8 8 0 1116 0A8 8 0 014 12z"/></svg>Auto-computed ratios</div>
+            <div class="row mt-4">
+              <div>650/500 → <span class="bold" id="r650_500">NA</span></div>
+              <div>720/500 → <span class="bold" id="r720_500">1.0000</span></div>
+              <div>1035/500 → <span class="bold" id="r1035_500">1.0000</span></div>
+            </div>
+            <div class="text-xs muted mt-4">If 650 is left empty while the model uses <strong>650/500</strong>, that term is treated as 0 (may underestimate risk).</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Scenario & Threshold -->
+      <div class="card">
+        <div class="card-body">
+          <h2>Use-case & Threshold</h2>
+          <div class="mt-4 row">
+            <div>
+              <label class="label" for="scenario">Scenario</label>
+              <select class="input" id="scenario">
+                <option value="cirrhosis">HBV-cirrhosis surveillance clinic</option>
+                <option value="checkup">General check-up population</option>
+              </select>
+            </div>
+            <div>
+              <label class="label" for="thr">Decision threshold p<sub>t</sub></label>
+              <input class="input" id="thr" type="number" step="0.0001" min="0" max="1" value="0.05" />
+            </div>
+          </div>
+
+          <div class="kpi mt-6">
+            <div class="item">
+              <div class="k">Predicted probability</div>
+              <div class="v" id="p_out">0.00%</div>
+            </div>
+            <div class="item">
+              <div class="k">Threshold p<sub>t</sub></div>
+              <div class="v" id="thr_out">5.00%</div>
+            </div>
+            <div class="item">
+              <div class="k">Recommendation</div>
+              <div class="recommend ok" id="decision">No intervention; routine follow-up</div>
+            </div>
+          </div>
+
+          <p class="text-xs muted mt-4">Threshold reflects tolerance for false positives vs. missed cases. Higher p<sub>t</sub> penalizes false positives more.</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Coefficients -->
+    <section class="card">
+      <div class="card-body">
+        <h2>Model Coefficients</h2>
+        <p class="text-sm muted mt-1">Prefilled from your final logistic model. You can edit below. The model now uses <strong>x/500</strong> features directly (no reciprocals).</p>
+        <div class="mt-4" style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px">
+          <div>
+            <label class="label" for="b0">Intercept (β₀)</label>
+            <input class="input" id="b0" type="number" step="0.000001" value="-6.7180528703" />
+          </div>
+          <div>
+            <label class="label" for="bAge">Age (β₁)</label>
+            <input class="input" id="bAge" type="number" step="0.000001" value="0.1085953017" />
+          </div>
+          <div>
+            <label class="label" for="b12720">720/500 (β₂)</label>
+            <input class="input" id="b12720" type="number" step="0.000001" value="0.8924109223" />
+          </div>
+          <div>
+            <label class="label" for="b11035">1035/500 (β₃)</label>
+            <input class="input" id="b11035" type="number" step="0.000001" value="0.7350571922" />
+          </div>
+          <div>
+            <label class="label" for="b10650">650/500 (β₄)</label>
+            <input class="input" id="b10650" type="number" step="0.000001" value="0.4331492809" />
+          </div>
+        </div>
+
+        <div class="mt-6" style="display:grid;grid-template-columns:repeat(3,1fr);gap:16px;">
+          <div>
+            <label class="label" for="s">Uniform shrinkage s</label>
+            <input class="input" id="s" type="number" step="0.01" value="1.00" />
+            <div class="text-xs muted mt-1">Set <strong>s</strong> to calibration slope (e.g., 0.77) if you apply uniform shrinkage.</div>
+          </div>
+          <div>
+            <label class="label" for="piDev">Development prevalence π<sub>dev</sub></label>
+            <input class="input" id="piDev" type="number" step="0.0001" min="0" max="1" value="0.61" />
+          </div>
+          <div>
+            <label class="label" for="piTar">Target prevalence π<sub>target</sub></label>
+            <input class="input" id="piTar" type="number" step="0.0001" min="0" max="1" value="0.03" />
+          </div>
+        </div>
+
+        <div class="mt-6" style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+          <button class="btn primary" id="save">Save settings</button>
+          <button class="btn ghost" id="reset">Reset</button>
+          <span class="subtle">Settings persist in your browser (localStorage).</span>
+        </div>
+
+        <p class="text-xs muted mt-6">Formula: p = logistic( β₀ + s·[β₁·Age + β₂·(720/500) + β₃·(1035/500) + β₄·(650/500)] + Δ ), where Δ = logit(π<sub>target</sub>) − logit(π<sub>dev</sub>).</p>
+      </div>
+    </section>
+
+    <section class="text-xs subtle">
+      <p>Research use only. Clinical decisions require appropriate validation and context.</p>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container footer-inner text-xs subtle">
+      <span>© HCC Raman Nomogram — Research Use Only</span>
+      <span>Clean · Minimal · Accessible</span>
+    </div>
+  </footer>
+
+<script>
+  // Utilities
+  const clamp = (x, lo, hi) => Math.min(hi, Math.max(lo, x));
+  const logistic = (z) => 1/(1+Math.exp(-z));
+  const logit = (p) => Math.log(p/(1-p));
+  const fmtPct = (p)=> (100*Math.min(1, Math.max(0, p))).toFixed(2) + '%';
+
+  // Elements
+  const age = document.getElementById('age');
+  const i500 = document.getElementById('i500');
+  const i650 = document.getElementById('i650');
+  const i720 = document.getElementById('i720');
+  const i1035 = document.getElementById('i1035');
+  const r650_500 = document.getElementById('r650_500');
+  const r720_500 = document.getElementById('r720_500');
+  const r1035_500 = document.getElementById('r1035_500');
+
+  const scenario = document.getElementById('scenario');
+  const thr = document.getElementById('thr');
+  const p_out = document.getElementById('p_out');
+  const thr_out = document.getElementById('thr_out');
+  const decision = document.getElementById('decision');
+
+  const b0 = document.getElementById('b0');
+  const bAge = document.getElementById('bAge');
+  // Treat these as β for x/500
+  const b12720 = document.getElementById('b12720'); // 720/500
+  const b11035 = document.getElementById('b11035'); // 1035/500
+  const b10650 = document.getElementById('b10650'); // 650/500
+
+  const s = document.getElementById('s');
+  const piDev = document.getElementById('piDev');
+  const piTar = document.getElementById('piTar');
+
+  // Compute UI ratios as x/500
+  function ratios() {
+    const I500 = Number(i500.value);
+    const I650 = Number(i650.value);
+    const I720 = Number(i720.value);
+    const I1035 = Number(i1035.value);
+
+    const r650 = (I500>0 && I650>=0) ? (I650/I500) : NaN;    // 650/500
+    const r720 = (I500>0 && I720>=0) ? (I720/I500) : NaN;    // 720/500
+    const r1035= (I500>0 && I1035>=0)? (I1035/I500): NaN;    // 1035/500
+
+    r650_500.textContent  = isFinite(r650)  ? r650.toFixed(4)  : 'NA';
+    r720_500.textContent  = isFinite(r720)  ? r720.toFixed(4)  : 'NA';
+    r1035_500.textContent = isFinite(r1035) ? r1035.toFixed(4) : 'NA';
+    return { r650, r720, r1035 };
+  }
+
+  function updateScenarioDefaults() {
+    if (scenario.value === 'cirrhosis') {
+      if (!thr.dataset.touched) thr.value = 0.05;
+      if (!piTar.dataset.touched) piTar.value = 0.03;
+    } else {
+      if (!thr.dataset.touched) thr.value = 0.005;
+      if (!piTar.dataset.touched) piTar.value = 0.0002;
+    }
+  }
+
+  function compute() {
+    const { r650, r720, r1035 } = ratios();
+
+    const B0 = Number(b0.value)||0;
+    const BA = Number(bAge.value)||0;
+    const B_720_500  = Number(b12720.value)||0;
+    const B_1035_500 = Number(b11035.value)||0;
+    const B_650_500  = Number(b10650.value)||0;
+    const S    = Number(s.value)||1;
+
+    const Age = Number(age.value)||0;
+
+    // DIRECT use of x/500 ratios (no reciprocals)
+    const LP_nonInt = (BA*Age)
+      + (isFinite(r720)  ? B_720_500  * r720  : 0)
+      + (isFinite(r1035) ? B_1035_500 * r1035 : 0)
+      + (isFinite(r650)  ? B_650_500  * r650  : 0);
+
+    // prevalence recalibration-in-the-large (delta on intercept)
+    const dev = clamp(Number(piDev.value)||0, 1e-6, 1-1e-6);
+    const tar = clamp(Number(piTar.value)||0, 1e-12, 1-1e-12);
+    const delta = logit(tar) - logit(dev);
+
+    const LP = B0 + S*LP_nonInt + delta;
+    const p = logistic(LP);
+
+    const t = Math.min(1, Math.max(0, Number(thr.value)||0));
+
+    p_out.textContent = fmtPct(p);
+    thr_out.textContent = fmtPct(t);
+
+    const need = (p >= t);
+    decision.className = 'recommend ' + (need ? 'warn' : 'ok');
+    decision.textContent = need ? 'Recommend further work-up' : 'No intervention; routine follow-up';
+  }
+
+  function save() {
+    const data = {
+      age: age.value, i500: i500.value, i650: i650.value, i720: i720.value, i1035: i1035.value,
+      scenario: scenario.value, thr: thr.value,
+      b0: b0.value, bAge: bAge.value, b12720: b12720.value, b11035: b11035.value, b10650: b10650.value,
+      s: s.value, piDev: piDev.value, piTar: piTar.value
+    };
+    localStorage.setItem('hcc_calc_refined_en', JSON.stringify(data));
+    alert('Saved to your browser');
+  }
+
+  function load() {
+    const raw = localStorage.getItem('hcc_calc_refined_en');
+    if (!raw) return;
+    try {
+      const d = JSON.parse(raw);
+      for (const [k,v] of Object.entries(d)) {
+        const el = document.getElementById(k);
+        if (el) el.value = v;
+      }
+    } catch(e) {}
+  }
+
+  function resetAll() {
+    localStorage.removeItem('hcc_calc_refined_en');
+    age.value=60; i500.value=1; i650.value=''; i720.value=1; i1035.value=1;
+    scenario.value='cirrhosis'; thr.value=0.05;
+    b0.value=-6.7180528703; bAge.value=0.1085953017; b12720.value=0.8924109223; b11035.value=0.7350571922; b10650.value=0.4331492809;
+    s.value=1.00; piDev.value=0.61; piTar.value=0.03;
+    thr.dataset.touched=''; piTar.dataset.touched='';
+    compute();
+  }
+
+  // Events
+  ;['input','change'].forEach(ev => {
+    [age,i500,i650,i720,i1035,thr,b0,bAge,b12720,b11035,b10650,s,piDev,piTar].forEach(el => el.addEventListener(ev, () => {
+      if (el===thr) thr.dataset.touched='1';
+      if (el===piTar) piTar.dataset.touched='1';
+      compute();
+    }));
+  });
+  scenario.addEventListener('change', () => { updateScenarioDefaults(); compute(); });
+
+  document.getElementById('save').addEventListener('click', save);
+  document.getElementById('reset').addEventListener('click', resetAll);
+
+  // Init
+  load();
+  updateScenarioDefaults();
+  compute();
+</script>
+</body>
+</html>
