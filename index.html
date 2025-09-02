@@ -6,41 +6,59 @@
 <title>HCC Risk & Decision Aid (Raman + Age)</title>
 <meta name="description" content="Predict HCC risk from Raman peak ratios and age, with threshold-based recommendation, shrinkage, and prevalence recalibration." />
 <style>
-  :root { --bg1:#f8fafc; --bg2:#ffffff; --card:#ffffff; --ink:#0f172a; --muted:#64748b; --accent:#2563eb; --ok:#059669; --warn:#dc2626; --line:#e5e7eb; }
+  :root {
+    --bg1:#f8fafc; --bg2:#ffffff;
+    --card:#ffffff; --ink:#0f172a; --muted:#64748b;
+    --accent:#2563eb; --ok:#059669; --warn:#dc2626;
+    --line:#e5e7eb;
+  }
   html,body{margin:0;padding:0;background:linear-gradient(180deg,var(--bg1),var(--bg2));color:var(--ink);
     font-family:ui-sans-serif,system-ui,-apple-system,Segoe UI,Roboto,Helvetica,Arial,"Apple Color Emoji","Segoe UI Emoji";}
   .container{max-width:1100px;margin:0 auto;padding:0 20px;}
-  .header{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.85);backdrop-filter: blur(6px);border-bottom:1px solid rgba(226,232,240,.7);}
+  .header{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.85);backdrop-filter: blur(6px);
+    border-bottom:1px solid rgba(226,232,240,.7);}
   .header-inner{display:flex;align-items:center;justify-content:space-between;padding:12px 0;}
   .brand{display:flex;align-items:center;gap:10px;font-weight:700;color:#0b1220}
   .logo{display:inline-flex;align-items:center;justify-content:center;width:36px;height:36px;border-radius:12px;background:var(--accent);color:#fff}
-  .subtle{font-size:12px;color:var(--muted)}
+  .subtle{font-size:12px;color:#64748b}
+
   .main{padding:28px 0 40px;display:grid;gap:20px}
   .card{background:var(--card);border:1px solid var(--line);border-radius:16px;box-shadow:0 8px 28px rgba(15,23,42,.06)}
   .card-body{padding:20px}
-  h1{font-size:22px;margin:0 0 6px} h2{font-size:18px;margin:0} p{margin:0}
-  .grid-2{display:grid;gap:16px} @media(min-width:900px){ .grid-2{grid-template-columns:1fr 1fr} }
+  h1{font-size:22px;margin:0 0 6px}
+  h2{font-size:18px;margin:0}
+  p{margin:0}
+
+  .grid-2{display:grid;gap:16px}
+  @media(min-width:900px){ .grid-2{grid-template-columns:1fr 1fr} }
+
   .input{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:12px;font-size:14px}
   .input:focus{outline:none;border-color:#bfdbfe;box-shadow:0 0 0 3px rgba(59,130,246,.25)}
   .label{font-size:14px;color:#0b1220;margin-bottom:6px;display:block}
-  .muted{color:var(--muted)}
+  .muted{color:#64748b}
   .kpi{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
   .kpi .item{background:#f8fafc;border-radius:12px;padding:12px 14px}
-  .kpi .k{font-size:12px;color:var(--muted)}
+  .kpi .k{font-size:12px;color:#64748b}
   .kpi .v{font-size:28px;font-weight:800;color:#0b1220}
   .recommend{border-radius:14px;padding:14px;font-weight:700}
   .recommend.ok{background:#ecfdf5;color:#065f46}
   .recommend.warn{background:#fef2f2;color:#991b1b}
+
   .pill{background:#f1f5f9;border-radius:12px;padding:10px 12px}
   .row{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+
   .btn{appearance:none;border:0;border-radius:10px;padding:10px 14px;font-weight:700;cursor:pointer}
   .btn.primary{background:var(--accent);color:#fff}
   .btn.ghost{background:#e2e8f0;color:#0f172a}
+
   .footer{border-top:1px solid rgba(226,232,240,.7);background:#fff}
   .footer-inner{display:flex;align-items:center;justify-content:space-between;padding:12px 0}
+
+  /* small helpers */
   .mt-4{margin-top:16px} .mt-6{margin-top:24px} .mt-8{margin-top:32px} .mb-1{margin-bottom:4px}
   .text-xs{font-size:12px} .text-sm{font-size:14px} .text-center{text-align:center} .bold{font-weight:700}
-  .info{display:flex;align-items:center;gap:8px;color:var(--muted)} .icon{width:18px;height:18px;display:inline-block}
+  .info{display:flex;align-items:center;gap:8px;color:#64748b}
+  .icon{width:18px;height:18px;display:inline-block}
 </style>
 </head>
 <body>
@@ -60,11 +78,7 @@
     <section class="card">
       <div class="card-body">
         <h1>Predict risk from Raman peak ratios and age</h1>
-        <p class="subtle mt-1">
-          Enter age and raw peak intensities (500, 650, 720, 1035 cm⁻¹). The tool computes ratios
-          (<strong>650/500, 720/500, 1035/500</strong>) and outputs a predicted probability with a threshold-based recommendation.
-          Advanced settings support uniform shrinkage and prevalence recalibration.
-        </p>
+        <p class="subtle mt-1">Enter age and raw peak intensities (500, 650, 720, 1035 cm⁻¹). The tool computes ratios (<strong>650/500, 720/500, 1035/500</strong>) and outputs a predicted probability with a threshold-based recommendation. Advanced settings support uniform shrinkage and prevalence recalibration.</p>
       </div>
     </section>
 
@@ -85,8 +99,7 @@
               <input class="input" id="i500" type="number" step="0.0001" min="0" value="1.00" />
             </div>
             <div>
-              <label class="label" for="i650">Peak intensity 650 cm⁻¹
-                <span class="subtle">(optional; needed if model uses <strong>650/500</strong>)</span></label>
+              <label class="label" for="i650">Peak intensity 650 cm⁻¹ <span class="subtle">(optional; needed if model uses <strong>650/500</strong>)</span></label>
               <input class="input" id="i650" type="number" step="0.0001" min="0" placeholder="optional" />
             </div>
 
@@ -101,18 +114,13 @@
           </div>
 
           <div class="pill mt-4">
-            <div class="info">
-              <svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M11 7h2v2h-2zM11 11h2v6h-2z"/><path d="M12 2a10 10 0 100 20 10 10 0 000-20zM4 12a8 8 0 1116 0A8 8 0 014 12z"/></svg>
-              Auto-computed ratios
-            </div>
+            <div class="info"><svg class="icon" viewBox="0 0 24 24" fill="currentColor"><path d="M11 7h2v2h-2zM11 11h2v6h-2z"/><path d="M12 2a10 10 0 100 20 10 10 0 000-20zM4 12a8 8 0 1116 0A8 8 0 014 12z"/></svg>Auto-computed ratios</div>
             <div class="row mt-4">
               <div>650/500 → <span class="bold" id="r650_500">NA</span></div>
               <div>720/500 → <span class="bold" id="r720_500">1.0000</span></div>
               <div>1035/500 → <span class="bold" id="r1035_500">1.0000</span></div>
             </div>
-            <div class="text-xs muted mt-4">
-              If 650 is left empty while the model uses <strong>650/500</strong>, that term is treated as 0 (may underestimate risk).
-            </div>
+            <div class="text-xs muted mt-4">If 650 is left empty while the model uses <strong>650/500</strong>, that term is treated as 0 (may underestimate risk).</div>
           </div>
         </div>
       </div>
@@ -150,9 +158,7 @@
             </div>
           </div>
 
-          <p class="text-xs muted mt-4">
-            Threshold reflects tolerance for false positives vs. missed cases. Higher p<sub>t</sub> penalizes false positives more.
-          </p>
+          <p class="text-xs muted mt-4">Threshold reflects tolerance for false positives vs. missed cases. Higher p<sub>t</sub> penalizes false positives more.</p>
         </div>
       </div>
     </section>
@@ -161,11 +167,7 @@
     <section class="card">
       <div class="card-body">
         <h2>Model Coefficients</h2>
-        <p class="text-sm muted mt-1">
-          Prefilled from your final logistic model. You can edit below.
-          <em>Note:</em> UI ratios are <strong>x/500</strong>;
-          legacy β’s trained on <strong>500/x</strong> are applied to the reciprocal automatically.
-        </p>
+        <p class="text-sm muted mt-1">Prefilled from your final logistic model. You can edit below. The model now uses <strong>x/500</strong> features directly (no reciprocals).</p>
         <div class="mt-4" style="display:grid;grid-template-columns:repeat(5,1fr);gap:14px">
           <div>
             <label class="label" for="b0">Intercept (β₀)</label>
@@ -175,17 +177,16 @@
             <label class="label" for="bAge">Age (β₁)</label>
             <input class="input" id="bAge" type="number" step="0.000001" value="0.1085953017" />
           </div>
-          <!-- 保持旧字段与数值：500/x -->
           <div>
-            <label class="label" for="b12720">500/720 (β₂)</label>
+            <label class="label" for="b12720">720/500 (β₂)</label>
             <input class="input" id="b12720" type="number" step="0.000001" value="0.8924109223" />
           </div>
           <div>
-            <label class="label" for="b11035">500/1035 (β₃)</label>
+            <label class="label" for="b11035">1035/500 (β₃)</label>
             <input class="input" id="b11035" type="number" step="0.000001" value="0.7350571922" />
           </div>
           <div>
-            <label class="label" for="b10650">500/650 (β₄)</label>
+            <label class="label" for="b10650">650/500 (β₄)</label>
             <input class="input" id="b10650" type="number" step="0.000001" value="0.4331492809" />
           </div>
         </div>
@@ -212,11 +213,7 @@
           <span class="subtle">Settings persist in your browser (localStorage).</span>
         </div>
 
-        <p class="text-xs muted mt-6">
-          Formula: p = logistic( β₀ + s·[β₁·Age + β₂·<strong>1/(720/500)</strong>
-          + β₃·<strong>1/(1035/500)</strong> + β₄·<strong>1/(650/500)</strong>] + Δ ),
-          where Δ = logit(π<sub>target</sub>) − logit(π<sub>dev</sub>).
-        </p>
+        <p class="text-xs muted mt-6">Formula: p = logistic( β₀ + s·[β₁·Age + β₂·(720/500) + β₃·(1035/500) + β₄·(650/500)] + Δ ), where Δ = logit(π<sub>target</sub>) − logit(π<sub>dev</sub>).</p>
       </div>
     </section>
 
@@ -245,7 +242,6 @@
   const i650 = document.getElementById('i650');
   const i720 = document.getElementById('i720');
   const i1035 = document.getElementById('i1035');
-
   const r650_500 = document.getElementById('r650_500');
   const r720_500 = document.getElementById('r720_500');
   const r1035_500 = document.getElementById('r1035_500');
@@ -256,27 +252,27 @@
   const thr_out = document.getElementById('thr_out');
   const decision = document.getElementById('decision');
 
-  // legacy β for 500/x (keep original IDs & numbers)
   const b0 = document.getElementById('b0');
   const bAge = document.getElementById('bAge');
-  const b12720 = document.getElementById('b12720'); // 500/720
-  const b11035 = document.getElementById('b11035'); // 500/1035
-  const b10650 = document.getElementById('b10650'); // 500/650
+  // Treat these as β for x/500
+  const b12720 = document.getElementById('b12720'); // 720/500
+  const b11035 = document.getElementById('b11035'); // 1035/500
+  const b10650 = document.getElementById('b10650'); // 650/500
 
   const s = document.getElementById('s');
   const piDev = document.getElementById('piDev');
   const piTar = document.getElementById('piTar');
 
-  // UI ratios as x/500
+  // Compute UI ratios as x/500
   function ratios() {
     const I500 = Number(i500.value);
     const I650 = Number(i650.value);
     const I720 = Number(i720.value);
     const I1035 = Number(i1035.value);
 
-    const r650 = (I500 > 0 && I650 >= 0) ? (I650 / I500) : NaN;   // 650/500
-    const r720 = (I500 > 0 && I720 >= 0) ? (I720 / I500) : NaN;   // 720/500
-    const r1035= (I500 > 0 && I1035>= 0) ? (I1035/ I500) : NaN;   // 1035/500
+    const r650 = (I500>0 && I650>=0) ? (I650/I500) : NaN;    // 650/500
+    const r720 = (I500>0 && I720>=0) ? (I720/I500) : NaN;    // 720/500
+    const r1035= (I500>0 && I1035>=0)? (I1035/I500): NaN;    // 1035/500
 
     r650_500.textContent  = isFinite(r650)  ? r650.toFixed(4)  : 'NA';
     r720_500.textContent  = isFinite(r720)  ? r720.toFixed(4)  : 'NA';
@@ -299,22 +295,18 @@
 
     const B0 = Number(b0.value)||0;
     const BA = Number(bAge.value)||0;
-    const B_500_720 = Number(b12720.value)||0;
-    const B_500_1035= Number(b11035.value)||0;
-    const B_500_650 = Number(b10650.value)||0;
+    const B_720_500  = Number(b12720.value)||0;
+    const B_1035_500 = Number(b11035.value)||0;
+    const B_650_500  = Number(b10650.value)||0;
     const S    = Number(s.value)||1;
 
     const Age = Number(age.value)||0;
 
-    // Map UI x/500 ratios to legacy 500/x features by reciprocals
-    const v_500_720  = (isFinite(r720)  && r720  !== 0) ? 1/r720  : NaN;
-    const v_500_1035 = (isFinite(r1035) && r1035 !== 0) ? 1/r1035 : NaN;
-    const v_500_650  = (isFinite(r650)  && r650  !== 0) ? 1/r650  : NaN;
-
+    // DIRECT use of x/500 ratios (no reciprocals)
     const LP_nonInt = (BA*Age)
-      + (isFinite(v_500_720)  ? B_500_720 * v_500_720   : 0)
-      + (isFinite(v_500_1035) ? B_500_1035* v_500_1035  : 0)
-      + (isFinite(v_500_650)  ? B_500_650 * v_500_650   : 0);
+      + (isFinite(r720)  ? B_720_500  * r720  : 0)
+      + (isFinite(r1035) ? B_1035_500 * r1035 : 0)
+      + (isFinite(r650)  ? B_650_500  * r650  : 0);
 
     // prevalence recalibration-in-the-large (delta on intercept)
     const dev = clamp(Number(piDev.value)||0, 1e-6, 1-1e-6);
@@ -325,6 +317,7 @@
     const p = logistic(LP);
 
     const t = Math.min(1, Math.max(0, Number(thr.value)||0));
+
     p_out.textContent = fmtPct(p);
     thr_out.textContent = fmtPct(t);
 
@@ -368,13 +361,11 @@
 
   // Events
   ;['input','change'].forEach(ev => {
-    [age,i500,i650,i720,i1035,thr,b0,bAge,b12720,b11035,b10650,s,piDev,piTar].forEach(el =>
-      el.addEventListener(ev, () => {
-        if (el===thr) thr.dataset.touched='1';
-        if (el===piTar) piTar.dataset.touched='1';
-        compute();
-      })
-    );
+    [age,i500,i650,i720,i1035,thr,b0,bAge,b12720,b11035,b10650,s,piDev,piTar].forEach(el => el.addEventListener(ev, () => {
+      if (el===thr) thr.dataset.touched='1';
+      if (el===piTar) piTar.dataset.touched='1';
+      compute();
+    }));
   });
   scenario.addEventListener('change', () => { updateScenarioDefaults(); compute(); });
 
@@ -388,4 +379,5 @@
 </script>
 </body>
 </html>
+
 
